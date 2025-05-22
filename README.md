@@ -8,7 +8,8 @@
 
 卡牌图片来自于https://github.com/FloatTech/zbpdata
 
-在此鸣谢ZeroBot插件开发组提供的抽牌功能思路，塔罗牌数据和卡牌图片仓库支持
+在此鸣谢[ZeroBot插件开发组](https://github.com/FloatTech)
+提供的抽牌功能思路，塔罗牌数据和卡牌图片仓库支持
 
 在此鸣谢MaiM-with-u开发组人员的指导和帮助
 
