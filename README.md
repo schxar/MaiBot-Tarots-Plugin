@@ -3,7 +3,8 @@
 
 其本质为麦麦HFC模式的action
 
-参考了https://github.com/FloatTech/ZeroBot-Plugin的go语言塔罗牌插件进行开发
+参考了https://github.com/FloatTech/ZeroBot-Plugin
+的塔罗牌插件进行开发
 
 卡牌图片来自于https://github.com/FloatTech/zbpdata
 
