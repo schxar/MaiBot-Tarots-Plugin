@@ -1,5 +1,6 @@
 from src.chat.focus_chat.planners.actions.plugin_action import PluginAction, register_action
 from src.common.logger_manager import get_logger
+from PIL import Image
 from typing import Tuple, Dict, Optional
 from pathlib import Path
 import json
@@ -7,6 +8,7 @@ import random
 import asyncio
 import aiohttp
 import base64
+import io
 
 logger = get_logger("tarots_action")
 
@@ -172,19 +174,44 @@ class TarotsAction(PluginAction):
     async def _get_card_image(self, card_id: str, is_reverse: bool) -> Optional[bytes]:
         """获取卡牌图片（有缓存机制）"""
         try:
-            filename = f"{card_id}_{'rev' if is_reverse else 'norm'}.png"
+            filename = f"{card_id}_norm.png"
             cache_path = self.cache_dir / filename
             
             if not cache_path.exists():
-                await self._download_image(card_id, is_reverse, cache_path)
+                await self._download_image(card_id, cache_path)
             
             with open(cache_path, "rb") as f:
-                return f.read()
+                img_data = f.read()
+            
+            if is_reverse:
+                img_data = self._rotate_image(img_data) # 如果是逆位牌，直接把正位牌扭180度
+
+            return img_data
+
         except Exception as e:
             logger.warning(f"{self.log_prefix} 获取图片失败: {str(e)}")
             return None
         
-    async def _download_image(self, card_id: str, is_reverse: bool, save_path: Path):
+    def _rotate_image(self, img_data: bytes) -> bytes:
+        """将图片旋转180度生成逆位图片"""
+        try:
+            # bytes → PIL Image对象
+            image = Image.open(io.BytesIO(img_data))
+            
+            # 旋转180度（逆时针）
+            rotated_image = image.rotate(180)
+            
+            # PIL Image对象 → bytes
+            buffer = io.BytesIO()
+            rotated_image.save(buffer, format='PNG')
+            return buffer.getvalue()
+            
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 图片旋转失败: {str(e)}")
+            # 旋转失败时返回原图
+            return img_data
+        
+    async def _download_image(self, card_id: str, save_path: Path):
         """图片本地缓存"""
         MAX_RETRIES = 3
         RETRY_DELAY = 2  # 初始重试间隔（秒）
@@ -196,8 +223,7 @@ class TarotsAction(PluginAction):
             
             # 构建下载URL
             base_url = "https://raw.githubusercontent.com/FloatTech/zbpdata/main/Tarot/"
-            folder = "Reverse/" if is_reverse else ""
-            full_url = f"{base_url}{folder}{img_path}"
+            full_url = f"{base_url}{img_path}"
 
             # 下载尝试循环
             for attempt in range(1, MAX_RETRIES + 1):
