@@ -1,5 +1,6 @@
-from src.chat.focus_chat.planners.actions.plugin_action import PluginAction, register_action
+from src.chat.actions.plugin_action import PluginAction, register_action, ActionActivationType
 from src.common.logger_manager import get_logger
+from src.chat.actions.base_action import ChatMode
 from PIL import Image
 from typing import Tuple, Dict, Optional
 from pathlib import Path
@@ -15,6 +16,16 @@ logger = get_logger("tarots_action")
 @register_action
 class TarotsAction(PluginAction):
     action_name = "tarots"
+
+    # 双激活类型配置
+    focus_activation_type = ActionActivationType.LLM_JUDGE
+    normal_activation_type = ActionActivationType.LLM_JUDGE
+    activation_keywords = ["抽一张塔罗牌", "抽张塔罗牌"]
+
+     # 模式和并行控制
+    mode_enable = ChatMode.ALL
+    parallel_action = False
+
     action_description = "执行塔罗牌占卜，支持多种抽牌方式" # action描述
     action_parameters = {
         "card_type": {
