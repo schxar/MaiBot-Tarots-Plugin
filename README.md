@@ -1,7 +1,7 @@
 # MaiBot-Tarot-Action-plugins
-这是给MaiM-with-u项目开发的一个伪抽塔罗牌插件
+这是给MaiM-with-u项目开发的一个塔罗牌插件
 
-其本质为麦麦的action，现在已适配mmc0.7.1-5的插件系统。
+现已适配最新的dev0.7.3.1的插件系统，如果出现问题就是等待更新了
 
 参考了https://github.com/FloatTech/ZeroBot-Plugin
 的塔罗牌插件进行开发
