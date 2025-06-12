@@ -44,8 +44,8 @@ class TarotsAction(BaseAction):
         }
     }
     action_require = [
-        "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且明确表达了要求你帮忙抽牌的意向时必须调用",
-        "需要明确指定抽牌范围和抽牌类型，未明确指定抽牌范围则默认为'全部'，未明确指定抽牌类型则默认为'单张'",
+        "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且用户明确表达了要求你帮忙抽牌的意向时，看心情调用（这意味着你可以拒绝抽牌）",
+        "用户需要明确指定抽牌范围和抽牌类型，如果用户未明确指定抽牌范围则默认为'全部'，未明确指定抽牌类型则默认为'单张'",
         "完成一次抽牌后，需要确定用户有没有明确要求再抽一次，没有再次要求就不要继续抽"
     ]
 
@@ -254,7 +254,7 @@ class TarotsAction(BaseAction):
                                 with open(save_path, "wb") as f:
                                     f.write(await resp.read())
                                 
-                                logger.success(f"[图片下载] 成功 {save_path.name} (尝试 {attempt}次)")
+                                logger.info(f"[图片下载] 成功 {save_path.name} (尝试 {attempt}次)")
                                 return
                             else:
                                 logger.warning(f"[图片下载] 异常状态码 {resp.status} - {full_url}")
