@@ -1,5 +1,4 @@
-from src.plugin_system.base.base_plugin import BasePlugin
-from src.plugin_system.base.base_plugin import register_plugin
+from src.plugin_system.base.base_plugin import BasePlugin, register_plugin
 from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
 from src.plugin_system.base.component_types import ComponentInfo
 from src.common.logger import get_logger
@@ -157,7 +156,7 @@ class TarotsAction(BaseAction):
                 img_data = await self._get_card_image(card_id, is_reverse)
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
-                    await self.send_reply_type("image", b64_data)
+                    await self.send_type("image", b64_data)
                 
                 # 轮询构建文本
                 desc = card_info['reverseDescription'] if is_reverse else card_info['description']
@@ -276,40 +275,6 @@ class TarotsAction(BaseAction):
         
         except Exception as e:
             logger.error(f"{self.log_prefix} 图片发送失败: {str(e)}")
-
-    async def send_reply_type(self, type: str, text: str) -> bool:
-            """发送回复消息
-
-            Args:
-                content: 回复内容
-
-            Returns:
-                bool: 是否发送成功
-            """
-            chat_stream = self.api.get_service("chat_stream")
-            if not chat_stream:
-                logger.error(f"{self.log_prefix} 没有可用的聊天流发送回复")
-                return False
-
-            if chat_stream.group_info:
-                # 群聊
-                return await self.api.send_message_to_target(
-                    message_type=type,
-                    content=text,
-                    platform=chat_stream.platform,
-                    target_id=str(chat_stream.group_info.group_id),
-                    is_group=True
-                )
-            else:
-                # 私聊
-                return await self.api.send_message_to_target(
-                    message_type=type,
-                    content=text,
-                    platform=chat_stream.platform,
-                    target_id=str(chat_stream.user_info.user_id),
-                    is_group=False
-                    
-                )
 
 @register_plugin
 class TarotsPlugin(BasePlugin):
