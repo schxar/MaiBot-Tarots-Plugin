@@ -1,0 +1,21 @@
+# 塔罗牌插件配置文件
+
+[plugin]
+name = "tarots_plugin"
+version = "0.5.0"
+enabled = true
+description = "塔罗牌插件"
+
+# 组件启用控制
+[components]
+enable_tarots = true
+enable_tarots_cache = true
+
+# 命令使用权限控制
+[permissions]
+admin_users = ["123456789"] # 写入你想要允许使用指令的QQ号
+
+# 日志配置
+[logging]
+level = "INFO"
+prefix = "[Tarots]" 
