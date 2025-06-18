@@ -1,7 +1,7 @@
 # MaiBot-Tarot-Action-plugins
 这是给MaiM-with-u项目开发的一个抽塔罗牌插件
 
-现已适配最新的dev0.8.0最新插件系统，如果出现问题就等待更新吧，dev分支将保持与最新dev兼容，不考虑回退。
+现已适配最新的dev0.8.0最新插件系统，如果出现问题就等待更新吧，dev分支将保持与麦麦的最新dev兼容，不考虑回退。
 
 参考了https://github.com/FloatTech/ZeroBot-Plugin
 的塔罗牌插件进行开发
@@ -31,4 +31,4 @@
 
 新增了一键缓存指令/tarots cache，其内部的配置文件config.toml内包含限制能够使用指令的人的选项，请自行填写QQ号。
 
-目前main分支只支持070正式版，dev分支目前支持0.8.0版本。
+目前main分支只支持0.7.0正式版，dev分支目前支持0.8.0版本最新dev，如果出问题那可能是没更新到位。
