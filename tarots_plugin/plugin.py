@@ -2,11 +2,11 @@ from src.plugin_system.base.base_plugin import BasePlugin, register_plugin
 from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.base.component_types import ComponentInfo
+from src.plugin_system.base.config_types import ConfigField
 from src.common.logger import get_logger
 from PIL import Image
 from typing import Tuple, Dict, Optional, List, Type
 from pathlib import Path
-import toml
 import json
 import random
 import asyncio
@@ -307,7 +307,7 @@ class TarotsCommand(BaseCommand, TarotsAction):
             if target_type == "cache":
 
                 if not self._check_person_permission(sender.user_id):    
-                    return False,"权限不足，你无权使用此命令"
+                    return False,"权限不足，无权使用此命令"
                 
                 # 添加进度提示
                 await self.send_text("开始缓存全部牌面，请稍候...")
@@ -344,27 +344,11 @@ class TarotsCommand(BaseCommand, TarotsAction):
         
     def _check_person_permission(self, user_id: str) -> bool:
         """权限检查逻辑"""
-        admin_users = self.get_config("permissions.admin_users",[])
+        admin_users = self.api.get_config("permissions.admin_users",[])
         if not admin_users:
             logger.warning(f"{self.log_prefix} 未配置管理员用户列表")
             return False
         return user_id in admin_users
-    
-    def get_config(self, key_path: str, default=None):
-        """获取配置值"""
-        try:
-            config_path = Path(__file__).parent / "config.toml"
-            with open(config_path, 'r', encoding='utf-8') as f:
-                config = toml.load(f)
-            
-            # 支持点分割的嵌套访问
-            keys = key_path.split('.')
-            value = config
-            for key in keys:
-                value = value[key]
-            return value
-        except:
-            return default
 
 @register_plugin
 class TarotsPlugin(BasePlugin):
@@ -380,37 +364,54 @@ class TarotsPlugin(BasePlugin):
     # 插件基本信息
     plugin_name = "tarots_plugin"
     plugin_description = "塔罗牌插件"
-    plugin_version = "0.5.0"
+    plugin_version = "0.6.0"
     plugin_author = "A肆零西烛"
     enable_plugin = True
     config_file_name = "config.toml"
 
+# 配置节描述
+    config_section_descriptions = {
+        "plugin": "插件基本配置",
+        "components": "组件启用控制",
+        "permissions": "管理者用户配置",
+        "logging": "日志记录配置",
+    }
+
+    # 配置Schema定义
+    config_schema = {
+        "plugin": {
+            "name": ConfigField(type=str, default="tarots_plugin", description="插件名称", required=True),
+            "version": ConfigField(type=str, default="0.6.0", description="插件版本号"),
+            "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
+            "description": ConfigField(
+                type=str, default="塔罗牌插件", description="插件描述", required=True
+            ),
+        },
+        "components": {
+            "enable_tarots": ConfigField(type=bool, default=True, description="是否启用塔罗牌插件抽牌功能"),
+            "enable_tarots_cache": ConfigField(type=bool, default=True, description="是否启用塔罗牌缓存指令")
+        },
+        "permissions": {
+            "admin_users": ConfigField(type=List, default=["123456789"], description="请写入管理员用户的QQ号，这会决定谁被允许使用塔罗牌缓存指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
+        },
+        "logging": {
+            "level": ConfigField(
+                type=str, default="INFO", description="日志级别", choices=["DEBUG", "INFO", "WARNING", "ERROR"]
+            ),
+            "prefix": ConfigField(type=str, default="[Tarots]", description="日志前缀"),
+        },
+    }
+
     def get_plugin_components(self) -> List[Tuple[ComponentInfo, Type]]:
         """返回插件包含的组件列表"""
 
-        # 从配置获取组件启用状态
-        enable_tarots = self.get_config("components.enable_tarots", True)
-        enable_tarots_cache = self.get_config("components.enable_tarots_cache", True)
         components = []
 
-        # 添加Action组件
-        if enable_tarots:
-            components.append(
-                (
-                    TarotsAction.get_action_info(
-                        name="tarots_action", description="塔罗牌插件，基于AI思考触发"
-                    ),
-                    TarotsAction,
-                )
-            )
-        # 添加commmand组件    
-        if enable_tarots_cache:
-            components.append(   
-                (
-                    TarotsCommand.get_command_info(
-                        name="tarots_cache", description="塔罗牌命令，目前仅做缓存"
-                    ),
-                    TarotsCommand,
-                )
-            )    
+        if self.get_config("components.enable_tarots", True):
+            components.append((TarotsAction.get_action_info(), TarotsAction))
+
+        if self.get_config("components.enable_tarots_cache", True):
+            components.append((TarotsCommand.get_command_info(), TarotsCommand))
+
         return components
+
