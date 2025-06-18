@@ -1,7 +1,7 @@
 # MaiBot-Tarot-Action-plugins
 这是给MaiM-with-u项目开发的一个抽塔罗牌插件
 
-现已适配最新的dev0.8.0的插件系统，如果出现问题就等待更新吧
+现已适配最新的dev0.8.0最新插件系统，如果出现问题就等待更新吧，dev分支将保持与最新dev兼容，不考虑回退。
 
 参考了https://github.com/FloatTech/ZeroBot-Plugin
 的塔罗牌插件进行开发
