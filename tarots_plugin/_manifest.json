@@ -1,0 +1,20 @@
+{
+  "manifest_version": 3,
+  "name": "tarots_plugin",
+  "version": "0.7.0",
+  "description": "塔罗牌插件，提供了抽塔罗牌占卜功能，牌面为B站幻星集牌组",
+  "author": {
+    "name": "A肆零西烛",
+    "url": "https://github.com/A0000Xz"
+  },
+  "license": "AGPL-v3.0",
+  "host_application": {
+    "min_version": "0.8.0",
+    "max_version": "0.8.0"
+  },
+  "keywords": ["tarot", "divination","moderation","bilibili"],
+  "categories": ["Moderation", "Entertainment-oriented divination"],
+  "repository_url": "https://github.com/A0000Xz/MaiBot-Tarots-Plugin/dev",
+  "default_locale": "zh-CN",
+  "locales_path": "_locales"
+}
