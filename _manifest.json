@@ -14,7 +14,7 @@
   },
   "keywords": ["tarot", "divination","moderation","bilibili"],
   "categories": ["Moderation", "Entertainment-oriented divination"],
-  "repository_url": "https://github.com/A0000Xz/MaiBot-Tarots-Plugin/dev",
+  "repository_url": "https://github.com/A0000Xz/MaiBot-Tarots-Plugin",
   "default_locale": "zh-CN",
   "locales_path": "_locales"
 }
