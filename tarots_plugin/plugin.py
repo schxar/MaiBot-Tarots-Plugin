@@ -178,7 +178,7 @@ class TarotsAction(BaseAction):
                 for reply_seg in result_message:
                     data = reply_seg[1]
                     await self.send_text(data)
-                    await asyncio.sleep(0.3)
+                    await asyncio.sleep(1.0)
 
             return True, "占卜成功，已发送结果"
             
