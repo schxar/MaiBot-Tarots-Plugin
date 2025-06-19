@@ -3,16 +3,19 @@ from src.plugin_system.base.base_action import BaseAction, ActionActivationType,
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.config_types import ConfigField
+from src.plugin_system.apis import generator_api
 from src.common.logger import get_logger
 from PIL import Image
-from typing import Tuple, Dict, Optional, List, Type
+from typing import Tuple, Dict, Optional, List, Any, Type
 from pathlib import Path
 import json
 import random
 import asyncio
 import aiohttp
 import base64
+import toml
 import io
+import os
 
 logger = get_logger("tarots")
 
@@ -31,23 +34,15 @@ class TarotsAction(BaseAction):
 
     action_description = "执行塔罗牌占卜，支持多种抽牌方式" # action描述
     action_parameters = {
-        "card_type": {
-            "type": "str",
-            "enum": ["全部", "大阿卡纳", "小阿卡纳"],
-            "default": "全部",
-            "description": "抽牌范围：全部，大阿卡纳，小阿卡纳" # 具体抽牌范围的描述
-        },
-        "formation": {
-            "type": "str",
-            "enum": ["单张", "圣三角", "时间之流","四要素","五牌阵","吉普赛十字","马蹄","六芒星"],
-            "default": "单张",
-            "description": "抽牌方式：单张,圣三角，时间之流，四要素，五牌阵，吉普赛十字，马蹄，六芒星" # 具体抽牌方式的描述 
-        }
+        "card_type": "塔罗牌的抽牌范围，必填，只能填一个参数，这里请根据用户的要求填'全部'或'大阿卡纳'或'小阿卡纳'，如果用户的要求并不明确，默认填'全部'",
+        "formation": "塔罗牌的抽牌方式，必填，只能填一个参数，这里请根据用户的要求填'单张'或'圣三角'或'时间之流'或'四要素'或'五牌阵'或'吉普赛十字'或'马蹄'或'六芒星'，如果用户的要求并不明确，默认填'单张'"
     }
     action_require = [
-        "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且用户明确表达了要求你帮忙抽牌的意向时，看心情调用（这意味着你可以拒绝抽牌）",
-        "用户需要明确指定抽牌范围和抽牌类型，如果用户未明确指定抽牌范围则默认为'全部'，未明确指定抽牌类型则默认为'单张'",
-        "完成一次抽牌后，需要确定用户有没有明确要求再抽一次，没有再次要求就不要继续抽"
+        "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且用户明确表达了要求你帮忙抽牌的意向时，你看心情调用就行（这意味着你可以拒绝抽塔罗牌，拒绝执行这个动作）。",
+        "用户需要明确指定抽牌范围和抽牌类型，如果用户未明确指定抽牌范围则默认为'全部'，未明确指定抽牌类型则默认为'单张'。",
+        "请仔细辨别对方到底是不是在让你抽塔罗牌！如果用户只是单独说了'抽卡','抽牌'等，并没有上文内容验证用户是想抽塔罗牌的意思，不要抽塔罗牌，不要执行这个动作！",
+        "在完成一次抽牌后，请仔细确定用户有没有明确要求再抽一次，没有再次要求就不要继续执行这个动作。"
+        
     ]
 
     associated_types = ["image", "text"] #该插件会发送的消息类型
@@ -78,6 +73,7 @@ class TarotsAction(BaseAction):
         self.card_map: Dict = {}
         self.formation_map: Dict = {}
         self._load_resources()
+        self._load_config()
 
     def _load_resources(self):
         """同步加载资源文件(显式指定UTF-8编码)"""
@@ -158,7 +154,7 @@ class TarotsAction(BaseAction):
                 img_data = await self._get_card_image(card_id, is_reverse)
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
-                    await self.send_type("image", b64_data)
+                    await self.send_image(b64_data)
                 
                 # 轮询构建文本
                 desc = card_info['reverseDescription'] if is_reverse else card_info['description']
@@ -170,7 +166,20 @@ class TarotsAction(BaseAction):
                 
             # 发送最终文本
             await asyncio.sleep(1.2) # 权宜之计，给最后一张图片1.2s的发送起跑时间，无可奈何的办法
-            await self.send_message_by_expressor(result_text) # 这里使用了expressor方式发送，让你的麦麦用自己的语言风格阐释结果。
+
+            result_status, result_message = await generator_api.rewrite_reply(
+                chat_stream=self.chat_stream,
+                reply_data={ 
+                "raw_reply": result_text,
+                "reason": "抽出了塔罗牌结果，请根据其内容为用户进行解牌",
+            }) # 让你的麦麦用自己的语言风格阐释结果
+
+            if result_status:
+                for reply_seg in result_message:
+                    data = reply_seg[1]
+                    await self.send_text(data)
+                    await asyncio.sleep(0.3)
+
             return True, "占卜成功，已发送结果"
             
         except Exception as e:
@@ -278,6 +287,28 @@ class TarotsAction(BaseAction):
         except Exception as e:
             logger.error(f"{self.log_prefix} 图片下载失败: {str(e)}")
 
+    def _load_config(self) -> Dict[str, Any]:
+        """从同级目录的config.toml文件直接加载配置"""
+        try:
+            # 获取当前文件所在目录
+            script_dir = os.path.dirname(os.path.abspath(__file__))
+            config_path = os.path.join(script_dir, "config.toml")
+            
+            # 读取并解析TOML配置文件
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = toml.load(f)
+            
+            # 构建配置字典，使用get方法安全访问嵌套值
+            config = {
+                "permissions": {
+                    "admin_users": config_data.get("permissions", {}).get("admin_users", [])
+                }
+            }
+            return config
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 加载配置失败: {e}")
+            raise
+
 class TarotsCommand(BaseCommand, TarotsAction):
     command_name = "tarots_cache"
     command_description = "塔罗牌命令，目前仅做缓存"
@@ -306,7 +337,8 @@ class TarotsCommand(BaseCommand, TarotsAction):
             
             if target_type == "cache":
 
-                if not self._check_person_permission(sender.user_id):    
+                if not self._check_person_permission(sender.user_id):
+                    await self.send_text("权限不足，你无权使用此命令")    
                     return False,"权限不足，无权使用此命令"
                 
                 # 添加进度提示
@@ -344,7 +376,8 @@ class TarotsCommand(BaseCommand, TarotsAction):
         
     def _check_person_permission(self, user_id: str) -> bool:
         """权限检查逻辑"""
-        admin_users = self.api.get_config("permissions.admin_users",[])
+        config = self._load_config()
+        admin_users = config["permissions"].get("admin_users", [])
         if not admin_users:
             logger.warning(f"{self.log_prefix} 未配置管理员用户列表")
             return False
@@ -364,7 +397,7 @@ class TarotsPlugin(BasePlugin):
     # 插件基本信息
     plugin_name = "tarots_plugin"
     plugin_description = "塔罗牌插件"
-    plugin_version = "0.6.0"
+    plugin_version = "0.7.0"
     plugin_author = "A肆零西烛"
     enable_plugin = True
     config_file_name = "config.toml"
@@ -373,7 +406,7 @@ class TarotsPlugin(BasePlugin):
     config_section_descriptions = {
         "plugin": "插件基本配置",
         "components": "组件启用控制",
-        "permissions": "管理者用户配置",
+        "permissions": "管理者用户配置（支持热重载）",
         "logging": "日志记录配置",
     }
 
@@ -381,7 +414,7 @@ class TarotsPlugin(BasePlugin):
     config_schema = {
         "plugin": {
             "name": ConfigField(type=str, default="tarots_plugin", description="插件名称", required=True),
-            "version": ConfigField(type=str, default="0.6.0", description="插件版本号"),
+            "version": ConfigField(type=str, default="0.7.0", description="插件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
             "description": ConfigField(
                 type=str, default="塔罗牌插件", description="插件描述", required=True
@@ -392,7 +425,7 @@ class TarotsPlugin(BasePlugin):
             "enable_tarots_cache": ConfigField(type=bool, default=True, description="是否启用塔罗牌缓存指令")
         },
         "permissions": {
-            "admin_users": ConfigField(type=List, default=["123456789"], description="请写入管理员用户的QQ号，这会决定谁被允许使用塔罗牌缓存指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
+            "admin_users": ConfigField(type=List, default=["123456789"], description="请写入被许可用户的QQ号，记得用英文单引号包裹并使用逗号分隔。这个配置会决定谁被允许使用塔罗牌缓存指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
         },
         "logging": {
             "level": ConfigField(
