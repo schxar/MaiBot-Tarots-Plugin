@@ -1,5 +1,5 @@
 # MaiBot-Tarot-Action-plugins
-这是给MaiM-with-u项目开发的一个抽塔罗牌插件
+这是给MaiM-with-u项目开发的一个抽塔罗牌插件，具有模拟人类的调用方式和独特自定义风格的解牌回复。
 
 ![QQ_1750356145611](https://github.com/user-attachments/assets/baad7ac1-b064-4576-8aa8-0449b47e82a6)
 
