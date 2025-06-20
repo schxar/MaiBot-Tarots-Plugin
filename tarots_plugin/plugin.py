@@ -396,9 +396,6 @@ class TarotsPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "tarots_plugin"
-    plugin_description = "塔罗牌插件，提供了抽塔罗牌占卜功能，具有模拟人类的调用方式和独特自定义风格的解牌回复。牌面为B站幻星集"
-    plugin_version = "0.8.0"
-    plugin_author = "A肆零西烛"
     enable_plugin = True
     config_file_name = "config.toml"
 
