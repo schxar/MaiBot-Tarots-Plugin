@@ -396,13 +396,13 @@ class TarotsPlugin(BasePlugin):
 
     # 插件基本信息
     plugin_name = "tarots_plugin"
-    plugin_description = "塔罗牌插件"
-    plugin_version = "0.7.0"
+    plugin_description = "塔罗牌插件，提供了抽塔罗牌占卜功能，具有模拟人类的调用方式和独特自定义风格的解牌回复。牌面为B站幻星集"
+    plugin_version = "0.8.0"
     plugin_author = "A肆零西烛"
     enable_plugin = True
     config_file_name = "config.toml"
 
-# 配置节描述
+    # 配置节描述
     config_section_descriptions = {
         "plugin": "插件基本配置",
         "components": "组件启用控制",
@@ -413,12 +413,8 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "name": ConfigField(type=str, default="tarots_plugin", description="插件名称", required=True),
-            "version": ConfigField(type=str, default="0.7.0", description="插件版本号"),
+            "config_version": ConfigField(type=str, default="0.8.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
-            "description": ConfigField(
-                type=str, default="塔罗牌插件", description="插件描述", required=True
-            ),
         },
         "components": {
             "enable_tarots": ConfigField(type=bool, default=True, description="是否启用塔罗牌插件抽牌功能"),
