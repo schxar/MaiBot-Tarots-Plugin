@@ -430,26 +430,46 @@ class TarotsCommand(BaseCommand, TarotsAction):
                 # 添加进度提示
                 await self.send_text("开始缓存全部牌面，请稍候...")
                 success_count = 0
+                redownload_count = 0  # 记录重新下载的数量
                 
                 for card in check_count:
                     try:
                         filename = f"{card}_norm.png"
                         cache_path = self.cache_dir / filename
 
-                        if not cache_path.exists():
-                            await self._download_image(card, cache_path)
-                            success_count += 1
-
+                        # 检查文件是否存在且完整
+                        if not cache_path.exists() or not self._validate_image_integrity(cache_path):
+                            if cache_path.exists():
+                                # 文件存在但损坏，记录重新下载
+                                logger.warning(f"{self.log_prefix} 发现损坏的缓存文件，准备重新下载: {cache_path}")
+                                redownload_count += 1
+                                try:
+                                    cache_path.unlink()  # 删除损坏的文件
+                                except Exception as e:
+                                    logger.error(f"{self.log_prefix} 删除损坏文件失败: {str(e)}")
+                                    continue
+                            
+                            # 下载图片
+                            download_success = await self._download_image(card, cache_path)
+                            if download_success:
+                                success_count += 1
+                            else:
+                                logger.warning(f"{self.log_prefix} 下载卡牌 {card} 失败")
                         else:
+                            # 文件存在且完整
                             success_count += 1
 
                     except Exception as e:
                         logger.warning(f"{self.log_prefix} 缓存卡牌 {card} 失败: {str(e)}")
                         continue 
 
-                await self.send_text(f"缓存完成，成功缓存 {success_count}/{len(check_count)} 张牌面")
-
-                return True,f"缓存完成，成功缓存 {success_count}/{len(check_count)} 张牌面"
+                # 构建结果消息
+                result_msg = f"缓存完成，成功缓存 {success_count}/{len(check_count)} 张牌面"
+                if redownload_count > 0:
+                    result_msg += f"，其中重新下载了 {redownload_count} 张损坏的图片"
+                
+                await self.send_text(result_msg)
+                return True, result_msg
             
             else:
                 await self.send_text("没有这种参数，只能填cache哦")
@@ -497,7 +517,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.6", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
