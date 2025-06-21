@@ -145,6 +145,8 @@ class TarotsAction(BaseAction):
     
             # 结果处理
             result_text = f"【{formation_name}牌阵】\n"
+            failed_images = []  # 记录获取失败的图片
+
             for idx, (card_id, is_reverse) in enumerate(selected_cards):
                 card_data = self.card_map[card_id]
                 card_info = card_data["info"]
@@ -155,6 +157,10 @@ class TarotsAction(BaseAction):
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
                     await self.send_image(b64_data)
+                else:
+                    # 记录失败的图片
+                    failed_images.append(f"{card_data['name']}({'逆位' if is_reverse else '正位'})")
+                    logger.warning(f"{self.log_prefix} 卡牌图片获取失败: {card_id}")
                 
                 # 轮询构建文本
                 desc = card_info['reverseDescription'] if is_reverse else card_info['description']
@@ -163,9 +169,20 @@ class TarotsAction(BaseAction):
                     f"{desc[:100]}...\n"
                 )
                 await asyncio.sleep(0.3)  # 防止消息频率限制
+
+            if failed_images:
+                error_msg = f"以下卡牌图片获取失败，占卜中断: {', '.join(failed_images)}"
+                await self.send_text(error_msg)
+                return False, ""
                 
             # 发送最终文本
             await asyncio.sleep(1.2) # 权宜之计，给最后一张图片1.2s的发送起跑时间，无可奈何的办法
+
+            config = self._load_config()
+            original_text = config["adjustment"].get("enable_original_text", False)
+            if original_text:
+                await self.send_text(result_text)
+                logger.info("原始文本已发送")
 
             result_status, result_message = await generator_api.rewrite_reply(
                 chat_stream=self.chat_stream,
@@ -177,7 +194,7 @@ class TarotsAction(BaseAction):
             if result_status:
                 for reply_seg in result_message:
                     data = reply_seg[1]
-                    await self.send_text(data)
+                    await self.send_custom("text", data, True)
                     await asyncio.sleep(1.0)
 
             return True, "占卜成功，已发送结果"
@@ -201,14 +218,28 @@ class TarotsAction(BaseAction):
             filename = f"{card_id}_norm.png"
             cache_path = self.cache_dir / filename
             
-            if not cache_path.exists():
-                await self._download_image(card_id, cache_path)
+            # 检查缓存文件是否存在且有效
+            if not cache_path.exists() or not self._validate_image_integrity(cache_path):
+                if cache_path.exists():
+                    logger.warning(f"{self.log_prefix} 发现损坏的缓存文件，准备重新下载: {cache_path}")
+                    try:
+                        cache_path.unlink()
+                    except Exception as e:
+                        logger.error(f"{self.log_prefix} 删除损坏文件失败: {str(e)}")
+                        return None
+                
+                # 下载图片，现在返回布尔值
+                success = await self._download_image(card_id, cache_path)
+                if not success:
+                    return None
             
             with open(cache_path, "rb") as f:
                 img_data = f.read()
             
             if is_reverse:
                 img_data = self._rotate_image(img_data) # 如果是逆位牌，直接把正位牌扭180度
+                if not img_data:  # 旋转失败
+                    return None
 
             return img_data
 
@@ -216,7 +247,7 @@ class TarotsAction(BaseAction):
             logger.warning(f"{self.log_prefix} 获取图片失败: {str(e)}")
             return None
         
-    def _rotate_image(self, img_data: bytes) -> bytes:
+    def _rotate_image(self, img_data: bytes) -> Optional[bytes]:
         """将图片旋转180度生成逆位图片"""
         try:
             # bytes → PIL Image对象
@@ -232,8 +263,8 @@ class TarotsAction(BaseAction):
             
         except Exception as e:
             logger.error(f"{self.log_prefix} 图片旋转失败: {str(e)}")
-            # 旋转失败时返回原图
-            return img_data
+            # 旋转失败时返回None
+            return None
         
     async def _download_image(self, card_id: str, save_path: Path):
         """图片本地缓存"""
@@ -264,8 +295,25 @@ class TarotsAction(BaseAction):
                                 with open(save_path, "wb") as f:
                                     f.write(await resp.read())
                                 
-                                logger.info(f"[图片下载] 成功 {save_path.name} (尝试 {attempt}次)")
-                                return
+                                # 立即进行完整性检测
+                                if self._validate_image_integrity(save_path):
+                                    logger.info(f"[图片下载] 成功并通过完整性检测 {save_path.name} (尝试 {attempt}次)")
+                                    return True
+                                else:
+                                    # 完整性检测失败，删除文件
+                                    logger.warning(f"[图片下载] 完整性检测失败，删除文件: {save_path}")
+                                    try:
+                                        save_path.unlink()
+                                    except Exception as delete_error:
+                                        logger.error(f"[图片下载] 删除损坏文件失败: {delete_error}")
+                                    
+                                    # 如果不是最后一次尝试，继续重试
+                                    if attempt < MAX_RETRIES:
+                                        logger.info(f"[图片下载] 完整性检测失败，准备重试 (尝试 {attempt+1}/{MAX_RETRIES})")
+                                        continue
+                                    else:
+                                        logger.error(f"[图片下载] 完整性检测失败且已达最大重试次数: {save_path}")
+                                        break
                             else:
                                 logger.warning(f"[图片下载] 异常状态码 {resp.status} - {full_url}")
                                 
@@ -278,14 +326,15 @@ class TarotsAction(BaseAction):
 
             # 最终失败处理
             logger.error(f"[图片下载] 终极失败 {full_url}，已达最大重试次数 {MAX_RETRIES}")
-            raise Exception(f"图片下载失败: {full_url}")
+            return False
 
         except KeyError:
             logger.error(f"[图片下载] 致命错误：卡牌 {card_id} 不存在于card_map中")
-            raise
+            return False
         
         except Exception as e:
             logger.error(f"{self.log_prefix} 图片下载失败: {str(e)}")
+            return False
 
     def _load_config(self) -> Dict[str, Any]:
         """从同级目录的config.toml文件直接加载配置"""
@@ -302,12 +351,49 @@ class TarotsAction(BaseAction):
             config = {
                 "permissions": {
                     "admin_users": config_data.get("permissions", {}).get("admin_users", [])
+                },
+                "adjustment": {
+                    "enable_original_text": config_data.get("adjustment", {}).get("enable_original_text", [])
                 }
             }
             return config
         except Exception as e:
             logger.error(f"{self.log_prefix} 加载配置失败: {e}")
             raise
+
+    def _validate_image_integrity(self, file_path: Path) -> bool:
+        """检查图片文件完整性"""
+        try:
+            # 检查文件是否存在
+            if not file_path.exists():
+                logger.debug(f"{self.log_prefix} 图片文件不存在: {file_path}")
+                return False
+            
+            # 检查文件大小（至少要有内容，不能是0字节）
+            if file_path.stat().st_size == 0:
+                logger.warning(f"{self.log_prefix} 图片文件为空: {file_path}")
+                return False
+            
+            # 尝试使用PIL打开图片来验证完整性
+            try:
+                with Image.open(file_path) as img:
+                    # 验证图片基本信息
+                    if img.size[0] <= 0 or img.size[1] <= 0:
+                        logger.warning(f"{self.log_prefix} 图片尺寸异常: {file_path}")
+                        return False
+                    
+                    # 尝试加载图片数据以确保文件没有损坏
+                    img.load()
+                    logger.debug(f"{self.log_prefix} 图片完整性校验通过: {file_path}")
+                    return True
+                    
+            except (Image.UnidentifiedImageError, OSError, IOError) as e:
+                logger.warning(f"{self.log_prefix} 图片损坏或格式错误: {file_path} - {str(e)}")
+                return False
+                
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 图片完整性校验异常: {file_path} - {str(e)}")
+            return False
 
 class TarotsCommand(BaseCommand, TarotsAction):
     command_name = "tarots_cache"
@@ -403,6 +489,7 @@ class TarotsPlugin(BasePlugin):
     config_section_descriptions = {
         "plugin": "插件基本配置",
         "components": "组件启用控制",
+        "adjustment": "功能微调向（支持热重载）",
         "permissions": "管理者用户配置（支持热重载）",
         "logging": "日志记录配置",
     }
@@ -410,12 +497,15 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.8.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
             "enable_tarots": ConfigField(type=bool, default=True, description="是否启用塔罗牌插件抽牌功能"),
             "enable_tarots_cache": ConfigField(type=bool, default=True, description="是否启用塔罗牌缓存指令")
+        },
+        "adjustment":{
+            "enable_original_text": ConfigField(type=bool, default=False, description="是否启用塔罗牌原始文本，开启该功能可以额外发出初始的解牌文本")
         },
         "permissions": {
             "admin_users": ConfigField(type=List, default=["123456789"], description="请写入被许可用户的QQ号，记得用英文单引号包裹并使用逗号分隔。这个配置会决定谁被允许使用塔罗牌缓存指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
