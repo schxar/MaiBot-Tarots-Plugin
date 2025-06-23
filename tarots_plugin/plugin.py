@@ -40,7 +40,7 @@ class TarotsAction(BaseAction):
     action_require = [
         "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且用户明确表达了要求你帮忙抽牌的意向时，你看心情调用就行（这意味着你可以拒绝抽塔罗牌，拒绝执行这个动作）。",
         "用户需要明确指定抽牌范围和抽牌类型，如果用户未明确指定抽牌范围则默认为'全部'，未明确指定抽牌类型则默认为'单张'。",
-        "请仔细辨别对方到底是不是在让你抽塔罗牌！如果用户只是单独说了'抽卡','抽牌'等，并没有上文内容验证用户是想抽塔罗牌的意思，不要抽塔罗牌，不要执行这个动作！",
+        "请仔细辨别对方到底是不是在让你抽塔罗牌！如果用户只是单独说了'抽卡'，'抽牌'，'占卜'，'算命'等，而且并没有上文内容验证用户是想抽塔罗牌的意思，就不要抽塔罗牌，不要执行这个动作！",
         "在完成一次抽牌后，请仔细确定用户有没有明确要求再抽一次，没有再次要求就不要继续执行这个动作。"
         
     ]
@@ -197,7 +197,14 @@ class TarotsAction(BaseAction):
                     await self.send_custom("text", data, True)
                     await asyncio.sleep(1.0)
 
-            return True, "占卜成功，已发送结果"
+            # 记录动作信息
+            await self.store_action_info(
+                action_build_into_prompt=True,
+                action_prompt_display=f"已为{self.user_nickname}抽取了塔罗牌并成功解牌。",
+                action_done=True
+                )
+
+            return True, f"已为{self.user_nickname}抽取了塔罗牌并成功解牌，占卜成功。"
             
         except Exception as e:
             logger.error(f"{self.log_prefix} 执行失败: {str(e)}")
@@ -517,7 +524,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.6", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="0.9.7", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
