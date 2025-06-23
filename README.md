@@ -4,7 +4,7 @@
 ![QQ_1750356145611](https://github.com/user-attachments/assets/baad7ac1-b064-4576-8aa8-0449b47e82a6)
 
 
-现已适配最新的dev0.8.0最新插件系统，如果出现问题就等待更新吧，main分支将保持与麦麦的最新dev兼容，不考虑回退。
+现已适配最新的dev0.8.0-s3最新插件系统，如果出现问题就等待更新吧，main分支将保持与麦麦的最新dev兼容，不考虑回退。
 
 参考了https://github.com/FloatTech/ZeroBot-Plugin
 的塔罗牌插件进行开发
