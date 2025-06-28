@@ -4,10 +4,14 @@ from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.apis import generator_api
+from src.plugin_system.apis import database_api
+from src.plugin_system.apis import config_api
+from src.common.database.database_model import Messages
 from src.common.logger import get_logger
 from PIL import Image
 from typing import Tuple, Dict, Optional, List, Any, Type
 from pathlib import Path
+import tomlkit
 import json
 import random
 import asyncio
@@ -64,23 +68,35 @@ class TarotsAction(BaseAction):
         global_config=global_config,
         **kwargs
     )
-        # 初始化路径
+        # 初始化基本路径
         self.base_dir = Path(__file__).parent.absolute()
-        self.cache_dir = self.base_dir / "tarots_cache" # 定义图片缓存文件夹为tarots_cache
-        self.cache_dir.mkdir(exist_ok=True) # 不存在该文件夹就创建
-        
+
+        # 扫描并更新可用牌组
+        self._update_available_card_sets()
+
+        # 初始化路径
+        self.config = self._load_config()
+        self.using_cards = self.config["cards"].get("using_cards", 'bilibili')
+        if not self.using_cards:
+            self.cache_dir = self.base_dir / "tarots_cache" / "default"
+        else:
+            self.cache_dir = self.base_dir / "tarots_cache" / self.using_cards # 定义图片缓存主文件夹为tarots_cache，后面紧随牌组文件夹名
+            self.cache_dir.mkdir(parents=True, exist_ok=True) # 不存在该文件夹就创建
+
         # 加载卡牌数据
         self.card_map: Dict = {}
         self.formation_map: Dict = {}
         self._load_resources()
-        self._load_config()
 
     def _load_resources(self):
         """同步加载资源文件(显式指定UTF-8编码)"""
         try:
+            if not self.using_cards:
+                logger.info("没有加载到任何可用牌组")
+                return
             # 加载卡牌数据
             with open(
-                self.base_dir / "tarot_jsons/tarots.json", 
+                self.base_dir / f"tarot_jsons/{self.using_cards}/tarots.json", 
                 encoding="utf-8"  
             ) as f:
                 self.card_map = json.load(f)
@@ -92,7 +108,7 @@ class TarotsAction(BaseAction):
             ) as f:
                 self.formation_map = json.load(f)
                 
-            logger.info(f"{self.log_prefix} 已加载{len(self.card_map)}张卡牌和{len(self.formation_map)}种抽牌方式")
+            logger.info(f"{self.log_prefix} 已加载{self.card_map['_meta']['total_cards']}张卡牌和{len(self.formation_map)}种抽牌方式")
         except UnicodeDecodeError as e:
             logger.error(f"{self.log_prefix} 编码错误: 请确保JSON文件为UTF-8格式 - {str(e)}")
             raise
@@ -103,11 +119,15 @@ class TarotsAction(BaseAction):
     async def execute(self) -> Tuple[bool, str]:
         """实现基类要求的入口方法"""
         try:
+            if not self.card_map:
+                await self.send_text("没有牌组，无法使用")
+                return False, "没有牌组，无法使用"
             logger.info(f"{self.log_prefix} 开始执行塔罗占卜")
             
             # 参数解析
-            card_type = self.action_data.get("card_type", "全部") 
+            request_type = self.action_data.get("card_type", "全部") 
             formation_name = self.action_data.get("formation", "单张")
+            card_type = self.get_available_card_type(request_type)
             
             # 参数校验
             if card_type not in ["全部", "大阿卡纳", "小阿卡纳"]:
@@ -144,8 +164,15 @@ class TarotsAction(BaseAction):
                 ]
     
             # 结果处理
-            result_text = f"【{formation_name}牌阵】\n"
+            result_text = f"【{formation_name}牌阵 - {self.using_cards}牌组】\n"
             failed_images = []  # 记录获取失败的图片
+
+            send_records = await database_api.db_get(
+            Messages,
+            filters={"user_id": f"{self.user_id}"},
+            order_by="-time",
+            limit=1
+            )
 
             for idx, (card_id, is_reverse) in enumerate(selected_cards):
                 card_data = self.card_map[card_id]
@@ -156,7 +183,7 @@ class TarotsAction(BaseAction):
                 img_data = await self._get_card_image(card_id, is_reverse)
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
-                    await self.send_image(b64_data)
+                    await self.send_custom("image", b64_data, False, f"{self.user_nickname}:{send_records['processed_plain_text']}")
                 else:
                     # 记录失败的图片
                     failed_images.append(f"{card_data['name']}({'逆位' if is_reverse else '正位'})")
@@ -176,26 +203,45 @@ class TarotsAction(BaseAction):
                 return False, ""
                 
             # 发送最终文本
-            await asyncio.sleep(1.2) # 权宜之计，给最后一张图片1.2s的发送起跑时间，无可奈何的办法
-
-            config = self._load_config()
-            original_text = config["adjustment"].get("enable_original_text", False)
-            if original_text:
-                await self.send_text(result_text)
-                logger.info("原始文本已发送")
+            await asyncio.sleep(1.5) # 权宜之计，给最后一张图片1.5s的发送起跑时间，无可奈何的办法
+            
+            original_text = self.config["adjustment"].get("enable_original_text", False)
+            self_id = config_api.get_global_config("bot.qq_account")
+            self_nickname = config_api.get_global_config("bot.nickname")
+            message_text = ""
 
             result_status, result_message = await generator_api.rewrite_reply(
                 chat_stream=self.chat_stream,
                 reply_data={ 
                 "raw_reply": result_text,
-                "reason": "抽出了塔罗牌结果，请根据其内容为用户进行解牌",
-            }) # 让你的麦麦用自己的语言风格阐释结果
+                "reason": "抽出了塔罗牌结果，请根据其内容为用户进行解牌"
+                },
+                enable_splitter=False,
+                enable_chinese_typo=False
+            ) # 让你的麦麦用自己的语言风格阐释结果
+      
+            # 获取数据库内最近1条记录
+            records = await database_api.db_get(
+            Messages,
+            filters={"user_id": f"{self_id}"},
+            order_by="-time",
+            limit=1
+            )
+   
+            if original_text:
+                await self.send_text(result_text)
+                logger.info("原始文本已发送")
 
             if result_status:
-                for reply_seg in result_message:
-                    data = reply_seg[1]
-                    await self.send_custom("text", data, True)
-                    await asyncio.sleep(1.0)
+             # 合并所有消息片段
+                message_text = result_message[0][1]
+    
+            # 一次性发送合并的消息
+            if message_text:
+                await self.send_custom("text", message_text, False, f"{self_nickname}:{records['processed_plain_text']}")
+                logger.info("合并消息已发送")
+            else:
+                return False, "消息生成错误，很可能是generator炸了"
 
             # 记录动作信息
             await self.store_action_info(
@@ -217,14 +263,13 @@ class TarotsAction(BaseAction):
             return [str(i) for i in range(22)]
         elif card_type == "小阿卡纳":
             return [str(i) for i in range(22, 78)]
-        return list(self.card_map.keys()) # 既不是大阿卡纳也不是小阿卡纳就返回全部的
+        return [str(i) for i in range(78)] # 既不是大阿卡纳也不是小阿卡纳就返回全部的
     
     async def _get_card_image(self, card_id: str, is_reverse: bool) -> Optional[bytes]:
         """获取卡牌图片（有缓存机制）"""
         try:
             filename = f"{card_id}_norm.png"
             cache_path = self.cache_dir / filename
-            
             # 检查缓存文件是否存在且有效
             if not cache_path.exists() or not self._validate_image_integrity(cache_path):
                 if cache_path.exists():
@@ -282,9 +327,15 @@ class TarotsAction(BaseAction):
             # 获取卡牌数据
             card_info = self.card_map[card_id]["info"]
             img_path = card_info['imgUrl']
+            base_url = self.card_map["_meta"]["base_url"]
+            # 获取代理数据
+            enable_proxy = self.config["proxy"].get("enable_proxy", False)
+            if enable_proxy:
+                proxy_url = self.config["proxy"].get("proxy_url", "")
+            else:
+                proxy_url = None
             
-            # 构建下载URL
-            base_url = "https://raw.githubusercontent.com/FloatTech/zbpdata/main/Tarot/"
+            # 构建完整的下载URL
             full_url = f"{base_url}{img_path}"
 
             # 下载尝试循环
@@ -293,7 +344,7 @@ class TarotsAction(BaseAction):
                     logger.info(f"[图片下载] 尝试 {attempt}/{MAX_RETRIES} - {card_id} - {full_url}")
                     
                     async with aiohttp.ClientSession() as session:
-                        async with session.get(full_url, timeout=15) as resp:
+                        async with session.get(full_url, timeout=15, proxy=proxy_url) as resp:
                             if resp.status == 200:
                                 # 确保目录存在
                                 save_path.parent.mkdir(parents=True, exist_ok=True)
@@ -359,8 +410,16 @@ class TarotsAction(BaseAction):
                 "permissions": {
                     "admin_users": config_data.get("permissions", {}).get("admin_users", [])
                 },
+                "proxy": {
+                    "enable_proxy": config_data.get("proxy", {}).get("enable_proxy", False),
+                    "proxy_url": config_data.get("proxy", {}).get("proxy_url", "")
+                },
+                "cards": {
+                    "using_cards": config_data.get("cards", {}).get("using_cards", 'bilibili'),
+                    "use_cards": config_data.get("cards", {}).get("use_cards", ['bilibili','east'])
+                },
                 "adjustment": {
-                    "enable_original_text": config_data.get("adjustment", {}).get("enable_original_text", [])
+                    "enable_original_text": config_data.get("adjustment", {}).get("enable_original_text", False)
                 }
             }
             return config
@@ -401,14 +460,120 @@ class TarotsAction(BaseAction):
         except Exception as e:
             logger.error(f"{self.log_prefix} 图片完整性校验异常: {file_path} - {str(e)}")
             return False
+        
+    def get_available_card_type(self, user_requested_type):
+        """获取当前牌组支持的卡牌类型"""
+        supported_type = self.card_map.get("_meta", {}).get("card_types", "")
+        # 如果牌组支持全部，或者用户请求与牌组支持的一致，就用用户请求的
+        if supported_type == '全部' or user_requested_type == supported_type:
+            return user_requested_type
+        else:
+            # 否则用牌组支持的类型
+            return supported_type
+        
+    def _update_available_card_sets(self):
+        """更新配置文件中的可用牌组列表"""
+        try:
+            current_using = self.config["cards"].get("using_cards", "")
+            available_sets = self._scan_available_card_sets()
+
+            # 如果当前使用的牌组不存在于可用牌组中
+            if not current_using or current_using not in available_sets:
+                # 尝试从可用牌组中选择一个有效的
+                new_using = available_sets[0] if available_sets else ""
+            
+                logger.warning(
+                    f"当前使用牌组 '{current_using}' 不存在，已自动切换至 '{new_using}'"
+                    )
+            
+                # 更新当前使用牌组
+                self.set_card(new_using)
+
+            if available_sets:
+                self.set_cards(available_sets)
+                logger.info(f"已更新可用牌组配置: {available_sets}")
+            else:
+                logger.error("未发现任何可用牌组")
+                self.set_card("")
+                self.set_cards([])
+        except Exception as e:
+            logger.error(f"更新牌组配置失败: {e}")
+        
+    def _scan_available_card_sets(self) -> List[str]:
+        """扫描tarot_jsons文件夹，返回可用牌组列表"""
+        try:
+            tarot_jsons_dir = self.base_dir / "tarot_jsons"
+            available_sets = []
+            
+            if not tarot_jsons_dir.exists():
+                logger.warning(f"tarot_jsons目录不存在: {tarot_jsons_dir}")
+                return []
+            
+            for item in tarot_jsons_dir.iterdir():
+                if item.is_dir():
+                    tarots_json_path = item / "tarots.json"
+                    if tarots_json_path.exists():
+                        available_sets.append(item.name)
+                        logger.info(f"发现可用牌组: {item.name}")
+            
+            return available_sets
+        except Exception as e:
+            logger.error(f"扫描牌组失败: {e}")
+            return []
+        
+    def set_cards(self, cards: List):
+        """使用tomlkit修改配置文件，保持注释和格式"""
+        try:
+            config_path = os.path.join(self.base_dir, "config.toml")
+            
+            # 使用tomlkit读取，保持格式和注释
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = tomlkit.load(f)
+                config_data["cards"]["use_cards"] = cards
+            
+            # 使用tomlkit写入，保持格式和注释
+            with open(config_path, 'w', encoding='utf-8') as f:
+                tomlkit.dump(config_data, f)
+                
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 扫描牌组失败: {e}")
+            raise
+
+    def _check_cards(self, cards: str) -> bool:
+        """权限检查逻辑"""
+        
+        use_cards = self.config["cards"].get("use_cards", ['bilibili','east'])
+        if not use_cards:
+            logger.warning(f"{self.log_prefix} 未配置可使用牌组列表")
+            return ""
+        return cards in use_cards
+    
+    def set_card(self, cards: str):
+        """使用tomlkit修改配置文件，保持注释和格式"""
+        try:
+            config_path = os.path.join(self.base_dir, "config.toml")
+            
+            # 使用tomlkit读取，保持格式和注释
+            with open(config_path, 'r', encoding='utf-8') as f:
+                config_data = tomlkit.load(f)
+                config_data["cards"]["using_cards"] = cards
+            
+            # 使用tomlkit写入，保持格式和注释
+            with open(config_path, 'w', encoding='utf-8') as f:
+                tomlkit.dump(config_data, f)
+                
+        except Exception as e:
+            logger.error(f"{self.log_prefix} 更新配置文件失败: {e}")
+            raise
 
 class TarotsCommand(BaseCommand, TarotsAction):
-    command_name = "tarots_cache"
+    command_name = "tarots_command"
     command_description = "塔罗牌命令，目前仅做缓存"
-    command_pattern = r"^/tarots\s+(?P<target_type>\w+)$"
-    command_help = "使用方法: /tarots cache - 缓存所有牌面"
+    command_pattern = r"^/tarots\s+(?P<target_type>\w+)(?:\s+(?P<action_value>\w+))?\s*$"
+    command_help = "使用方法: /tarots cache - 缓存所有牌面;/tarots switch 牌组名称 - 切换当前使用的牌组"
     command_examples = [
-        "/tarots cache - 开始缓存全部牌面"
+        "/tarots cache - 开始缓存全部牌面",
+        "/tarots switch 牌组名称 - 切换当前使用的牌组"
     ]
     enable_command = True
 
@@ -416,19 +581,38 @@ class TarotsCommand(BaseCommand, TarotsAction):
         super().__init__(*args, **kwargs)
         # 初始化 TarotsAction 的属性
         self.base_dir = Path(__file__).parent.absolute()
-        self.cache_dir = self.base_dir / "tarots_cache"
-        self.cache_dir.mkdir(exist_ok=True)
+        self._update_available_card_sets()
+        self.config = self._load_config()
+        self.using_cards = self.config["cards"].get("using_cards", 'bilibili')
+        if not self.using_cards:
+            self.cache_dir = self.base_dir / "tarots_cache" / "default"
+        else:
+            self.cache_dir = self.base_dir / "tarots_cache" / self.using_cards
+            self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.card_map = {}
         self.formation_map = {}
         self._load_resources()
 
     async def execute(self) -> Tuple[bool, Optional[str]]:
         try:
+            if not self.card_map:
+                await self.send_text("没有牌组，无法使用")
+                return False, "没有牌组，无法使用"
             target_type = self.matched_groups.get("target_type")
-            check_count=[str(i) for i in range(78)]
+            action_value = self.matched_groups.get("action_value")
+            support_type = self.get_available_card_type("全部")
+            if support_type == '全部':
+                check_count=[str(i) for i in range(78)]
+            elif support_type == '大阿卡纳':
+                check_count=[str(i) for i in range(22)]
+            elif support_type == '小阿卡纳':
+                check_count=[str(i) for i in range(22,78)]
+            else:
+                await self.send_text("这不在可用牌组中") 
+                return False,"非可用牌组"
             sender = self.message.message_info.user_info
             
-            if target_type == "cache":
+            if target_type == "cache" and not action_value:
 
                 if not self._check_person_permission(sender.user_id):
                     await self.send_text("权限不足，你无权使用此命令")    
@@ -478,19 +662,28 @@ class TarotsCommand(BaseCommand, TarotsAction):
                 await self.send_text(result_msg)
                 return True, result_msg
             
+            elif target_type == "switch" and action_value:
+                cards = self._check_cards(action_value)
+                if cards:
+                    self.set_card(action_value)
+                    await self.send_text(f"已更换当前牌组为{action_value}")
+                    return True, f"成功更换使用牌组至{action_value}"
+                else:
+                    await self.send_text(f"{action_value}并不在当前可用牌组里")
+                    return False, f"{action_value}并不在当前可用牌组里"
+
             else:
-                await self.send_text("没有这种参数，只能填cache哦")
-                return False, "没有这种参数，只能填cache哦"
+                await self.send_text("没有这种参数，只能填cache或者switch哦")
+                return False, "没有这种参数"
 
         except Exception as e:
-            await self.send_text(f"{self.log_prefix} 一键缓存执行错误: {e}")
-            logger.error(f"{self.log_prefix} 一键缓存执行错误: {e}")
+            await self.send_text(f"{self.log_prefix} 命令执行错误: {e}")
+            logger.error(f"{self.log_prefix} 命令执行错误: {e}")
             return False, f"执行失败: {str(e)}"
         
     def _check_person_permission(self, user_id: str) -> bool:
         """权限检查逻辑"""
-        config = self._load_config()
-        admin_users = config["permissions"].get("admin_users", [])
+        admin_users = self.config["permissions"].get("admin_users", [])
         if not admin_users:
             logger.warning(f"{self.log_prefix} 未配置管理员用户列表")
             return False
@@ -516,6 +709,8 @@ class TarotsPlugin(BasePlugin):
     config_section_descriptions = {
         "plugin": "插件基本配置",
         "components": "组件启用控制",
+        "proxy": "代理设置",
+        "cards": "牌组相关设置",
         "adjustment": "功能微调向（支持热重载）",
         "permissions": "管理者用户配置（支持热重载）",
         "logging": "日志记录配置",
@@ -524,12 +719,20 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="0.9.7", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.0.3", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
             "enable_tarots": ConfigField(type=bool, default=True, description="是否启用塔罗牌插件抽牌功能"),
             "enable_tarots_cache": ConfigField(type=bool, default=True, description="是否启用塔罗牌缓存指令")
+        },
+        "proxy":{
+            "enable_proxy": ConfigField(type=bool, default=False, description="是否启用代理功能"),
+            "proxy_url": ConfigField(type=str, default="", description="请在双引号中填入你要使用的代理地址")
+        },
+        "cards":{
+            "using_cards": ConfigField(type=str, default='bilibili', description="塔罗牌插件使用哪套牌组"),
+            "use_cards": ConfigField(type=List, default=['bilibili','east'], description="塔罗牌插件可用的牌组，目前默认有'bilibili'，'east'两套默认牌组可选")
         },
         "adjustment":{
             "enable_original_text": ConfigField(type=bool, default=False, description="是否启用塔罗牌原始文本，开启该功能可以额外发出初始的解牌文本")
@@ -557,4 +760,3 @@ class TarotsPlugin(BasePlugin):
             components.append((TarotsCommand.get_command_info(), TarotsCommand))
 
         return components
-
