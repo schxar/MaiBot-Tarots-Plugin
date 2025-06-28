@@ -724,7 +724,7 @@ class TarotsPlugin(BasePlugin):
         },
         "components": {
             "enable_tarots": ConfigField(type=bool, default=True, description="是否启用塔罗牌插件抽牌功能"),
-            "enable_tarots_cache": ConfigField(type=bool, default=True, description="是否启用塔罗牌缓存指令")
+            "enable_tarots_command": ConfigField(type=bool, default=True, description="是否启用塔罗牌指令功能")
         },
         "proxy":{
             "enable_proxy": ConfigField(type=bool, default=False, description="是否启用代理功能"),
@@ -756,7 +756,7 @@ class TarotsPlugin(BasePlugin):
         if self.get_config("components.enable_tarots", True):
             components.append((TarotsAction.get_action_info(), TarotsAction))
 
-        if self.get_config("components.enable_tarots_cache", True):
+        if self.get_config("components.enable_tarots_command", True):
             components.append((TarotsCommand.get_command_info(), TarotsCommand))
 
         return components
