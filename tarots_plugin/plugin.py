@@ -709,8 +709,8 @@ class TarotsPlugin(BasePlugin):
     config_section_descriptions = {
         "plugin": "插件基本配置",
         "components": "组件启用控制",
-        "proxy": "代理设置",
-        "cards": "牌组相关设置",
+        "proxy": "代理设置（支持热重载）",
+        "cards": "牌组相关设置（支持热重载）",
         "adjustment": "功能微调向（支持热重载）",
         "permissions": "管理者用户配置（支持热重载）",
         "logging": "日志记录配置",
