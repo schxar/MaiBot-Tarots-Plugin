@@ -39,7 +39,8 @@ class TarotsAction(BaseAction):
     action_description = "执行塔罗牌占卜，支持多种抽牌方式" # action描述
     action_parameters = {
         "card_type": "塔罗牌的抽牌范围，必填，只能填一个参数，这里请根据用户的要求填'全部'或'大阿卡纳'或'小阿卡纳'，如果用户的要求并不明确，默认填'全部'",
-        "formation": "塔罗牌的抽牌方式，必填，只能填一个参数，这里请根据用户的要求填'单张'或'圣三角'或'时间之流'或'四要素'或'五牌阵'或'吉普赛十字'或'马蹄'或'六芒星'，如果用户的要求并不明确，默认填'单张'"
+        "formation": "塔罗牌的抽牌方式，必填，只能填一个参数，这里请根据用户的要求填'单张'或'圣三角'或'时间之流'或'四要素'或'五牌阵'或'吉普赛十字'或'马蹄'或'六芒星'，如果用户的要求并不明确，默认填'单张'",
+        "target_message": "提出抽塔罗牌的对方的发言内容，格式必须为：（用户名:发言内容），若不清楚是回复谁的话可以为None"
     }
     action_require = [
         "当消息包含'抽塔罗牌''塔罗牌占卜'等关键词，且用户明确表达了要求你帮忙抽牌的意向时，你看心情调用就行（这意味着你可以拒绝抽塔罗牌，拒绝执行这个动作）。",
@@ -166,13 +167,25 @@ class TarotsAction(BaseAction):
             # 结果处理
             result_text = f"【{formation_name}牌阵 - {self.using_cards}牌组】\n"
             failed_images = []  # 记录获取失败的图片
+            reply_to = self.action_data.get("target_message", None)
 
-            send_records = await database_api.db_get(
-            Messages,
-            filters={"user_id": f"{self.user_id}"},
-            order_by="-time",
-            limit=1
-            )
+            if not reply_to:
+                return False, "未找到相关回复消息，中止塔罗牌抽取"
+            
+            logger.info(f"消息为'{reply_to}'")
+            
+            # 解析reply_to参数
+            if ":" in reply_to:
+                parts = reply_to.split(":", 1)
+            elif "：" in reply_to:
+                parts = reply_to.split("：", 1)
+            else:
+                return False, "reply_to格式不正确"
+
+            if len(parts) != 2:
+                return False, "reply_to格式不正确"
+
+            user_nickname = parts[0].strip()
 
             for idx, (card_id, is_reverse) in enumerate(selected_cards):
                 card_data = self.card_map[card_id]
@@ -183,7 +196,7 @@ class TarotsAction(BaseAction):
                 img_data = await self._get_card_image(card_id, is_reverse)
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
-                    await self.send_custom("image", b64_data, False, f"{self.user_nickname}:{send_records['processed_plain_text']}")
+                    await self.send_custom("image", b64_data, False, f"{reply_to}")
                 else:
                     # 记录失败的图片
                     failed_images.append(f"{card_data['name']}({'逆位' if is_reverse else '正位'})")
@@ -246,11 +259,11 @@ class TarotsAction(BaseAction):
             # 记录动作信息
             await self.store_action_info(
                 action_build_into_prompt=True,
-                action_prompt_display=f"已为{self.user_nickname}抽取了塔罗牌并成功解牌。",
+                action_prompt_display=f"已为{user_nickname}抽取了塔罗牌并成功解牌。",
                 action_done=True
                 )
 
-            return True, f"已为{self.user_nickname}抽取了塔罗牌并成功解牌，占卜成功。"
+            return True, f"已为{user_nickname}抽取了塔罗牌并成功解牌，占卜成功。"
             
         except Exception as e:
             logger.error(f"{self.log_prefix} 执行失败: {str(e)}")
@@ -496,6 +509,8 @@ class TarotsAction(BaseAction):
                 logger.error("未发现任何可用牌组")
                 self.set_card("")
                 self.set_cards([])
+                
+            self.config = self._load_config()
         except Exception as e:
             logger.error(f"更新牌组配置失败: {e}")
         
@@ -581,8 +596,8 @@ class TarotsCommand(BaseCommand, TarotsAction):
         super().__init__(*args, **kwargs)
         # 初始化 TarotsAction 的属性
         self.base_dir = Path(__file__).parent.absolute()
-        self._update_available_card_sets()
         self.config = self._load_config()
+        self._update_available_card_sets()
         self.using_cards = self.config["cards"].get("using_cards", 'bilibili')
         if not self.using_cards:
             self.cache_dir = self.base_dir / "tarots_cache" / "default"
@@ -719,7 +734,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.0.4", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.0.5", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
