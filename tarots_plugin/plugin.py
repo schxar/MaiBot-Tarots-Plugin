@@ -72,10 +72,10 @@ class TarotsAction(BaseAction):
         self.base_dir = Path(__file__).parent.absolute()
 
         # 扫描并更新可用牌组
+        self.config = self._load_config()
         self._update_available_card_sets()
 
         # 初始化路径
-        self.config = self._load_config()
         self.using_cards = self.config["cards"].get("using_cards", 'bilibili')
         if not self.using_cards:
             self.cache_dir = self.base_dir / "tarots_cache" / "default"
@@ -719,7 +719,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.0.3", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.0.4", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
