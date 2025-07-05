@@ -6,7 +6,8 @@ from src.plugin_system.base.config_types import ConfigField
 from src.plugin_system.apis import generator_api
 from src.plugin_system.apis import database_api
 from src.plugin_system.apis import config_api
-from src.common.database.database_model import Messages
+from src.common.database.database_model import Messages, PersonInfo
+from src.person_info.person_info import get_person_info_manager
 from src.common.logger import get_logger
 from PIL import Image
 from typing import Tuple, Dict, Optional, List, Any, Type
@@ -20,6 +21,7 @@ import base64
 import toml
 import io
 import os
+import re
 
 logger = get_logger("tarots")
 
@@ -172,8 +174,6 @@ class TarotsAction(BaseAction):
             if not reply_to:
                 return False, "未找到相关回复消息，中止塔罗牌抽取"
             
-            logger.info(f"消息为'{reply_to}'")
-            
             # 解析reply_to参数
             if ":" in reply_to:
                 parts = reply_to.split(":", 1)
@@ -220,7 +220,14 @@ class TarotsAction(BaseAction):
             
             original_text = self.config["adjustment"].get("enable_original_text", False)
             self_id = config_api.get_global_config("bot.qq_account")
-            self_nickname = config_api.get_global_config("bot.nickname")
+
+            # 查询自己机器人本体的名字，因为可乐允许机器人自己更改自己的绰号，还一直在不断的改！
+            self_personinfo = await database_api.db_get(
+            PersonInfo,
+            filters={"user_id": f"{self_id}"},
+            limit=1
+            )
+
             message_text = ""
 
             result_status, result_message = await generator_api.rewrite_reply(
@@ -240,6 +247,24 @@ class TarotsAction(BaseAction):
             order_by="-time",
             limit=1
             )
+
+            # 处理records文本中的引用格式
+            processed_record_text = ""
+            if records:
+                processed_record_text = records['processed_plain_text']
+                
+                # 处理回复格式
+                reply_match = re.search(r"回复<([^:<>]+):([^:<>]+)>", processed_record_text)
+                if reply_match:
+                    person_id = get_person_info_manager().get_person_id("qq", reply_match.group(2))
+                    person_name = await get_person_info_manager().get_value(person_id, "person_name") or reply_match.group(1)
+                    processed_record_text = re.sub(r"回复<[^:<>]+:[^:<>]+>", f"回复 {person_name}", processed_record_text, count=1)
+                
+                # 处理@格式
+                for match in re.finditer(r"@<([^:<>]+):([^:<>]+)>", processed_record_text):
+                    person_id = get_person_info_manager().get_person_id("qq", match.group(2))
+                    person_name = await get_person_info_manager().get_value(person_id, "person_name") or match.group(1)
+                    processed_record_text = processed_record_text.replace(match.group(0), f"@{person_name}")
    
             if original_text:
                 await self.send_text(result_text)
@@ -251,7 +276,7 @@ class TarotsAction(BaseAction):
     
             # 一次性发送合并的消息
             if message_text:
-                await self.send_custom("text", message_text, False, f"{self_nickname}:{records['processed_plain_text']}")
+                await self.send_custom("text", message_text, False, f"{self_personinfo['person_name']}:{processed_record_text}")
                 logger.info("合并消息已发送")
             else:
                 return False, "消息生成错误，很可能是generator炸了"
@@ -734,7 +759,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.0.5", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.1.2", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
