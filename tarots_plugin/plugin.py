@@ -635,6 +635,12 @@ class TarotsCommand(BaseCommand, TarotsAction):
 
     async def execute(self) -> Tuple[bool, Optional[str]]:
         try:
+            sender = self.message.message_info.user_info
+
+            if not self._check_person_permission(sender.user_id):
+                await self.send_text("权限不足，你无权使用此命令")    
+                return False,"权限不足，无权使用此命令"
+            
             if not self.card_map:
                 await self.send_text("没有牌组，无法使用")
                 return False, "没有牌组，无法使用"
@@ -650,13 +656,8 @@ class TarotsCommand(BaseCommand, TarotsAction):
             else:
                 await self.send_text("这不在可用牌组中") 
                 return False,"非可用牌组"
-            sender = self.message.message_info.user_info
             
             if target_type == "cache" and not action_value:
-
-                if not self._check_person_permission(sender.user_id):
-                    await self.send_text("权限不足，你无权使用此命令")    
-                    return False,"权限不足，无权使用此命令"
                 
                 # 添加进度提示
                 await self.send_text("开始缓存全部牌面，请稍候...")
@@ -759,7 +760,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.1.2", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.1.3", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
@@ -778,7 +779,7 @@ class TarotsPlugin(BasePlugin):
             "enable_original_text": ConfigField(type=bool, default=False, description="是否启用塔罗牌原始文本，开启该功能可以额外发出初始的解牌文本")
         },
         "permissions": {
-            "admin_users": ConfigField(type=List, default=["123456789"], description="请写入被许可用户的QQ号，记得用英文单引号包裹并使用逗号分隔。这个配置会决定谁被允许使用塔罗牌缓存指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
+            "admin_users": ConfigField(type=List, default=["123456789"], description="请写入被许可用户的QQ号，记得用英文单引号包裹并使用逗号分隔。这个配置会决定谁被允许使用塔罗牌指令，注意，这个选项支持热重载（你可以不重启麦麦，改动会即刻生效）"),
         },
         "logging": {
             "level": ConfigField(
