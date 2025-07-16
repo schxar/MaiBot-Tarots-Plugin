@@ -13,6 +13,7 @@ from src.common.logger import get_logger
 from PIL import Image
 from typing import Tuple, Dict, Optional, List, Any, Type
 from pathlib import Path
+import traceback
 import tomlkit
 import json
 import random
@@ -226,7 +227,8 @@ class TarotsAction(BaseAction):
             self_personinfo = await database_api.db_get(
             PersonInfo,
             filters={"user_id": f"{self_id}"},
-            limit=1
+            limit=1,
+            single_result = True
             )
 
             message_text = ""
@@ -246,7 +248,8 @@ class TarotsAction(BaseAction):
             Messages,
             filters={"user_id": f"{self_id}"},
             order_by="-time",
-            limit=1
+            limit=1,
+            single_result = True
             )
 
             # 处理records文本中的引用格式
@@ -292,7 +295,8 @@ class TarotsAction(BaseAction):
             return True, f"已为{user_nickname}抽取了塔罗牌并成功解牌，占卜成功。"
             
         except Exception as e:
-            logger.error(f"{self.log_prefix} 执行失败: {str(e)}")
+            error_msg = traceback.format_exc()
+            logger.error(f"{self.log_prefix} 执行失败: {error_msg}")
             await self.send_text(f"占卜失败: {str(e)}")
             return False, "执行错误"
         
@@ -763,7 +767,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.2.0", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.2.1", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {

@@ -1,5 +1,5 @@
 # MaiBot-Tarot-Action-plugins
-塔罗牌插件1.2.0版本正式发布！
+塔罗牌插件1.2.1版本正式发布！
 
 ![QQ_1751117187452](https://github.com/user-attachments/assets/3eb9b721-aa41-4edb-86bf-fe9cf84fdcb9)
 
