@@ -644,11 +644,11 @@ class TarotsCommand(BaseCommand, TarotsAction):
 
             if not self._check_person_permission(sender.user_id):
                 await self.send_text("权限不足，你无权使用此命令")    
-                return False,"权限不足，无权使用此命令"
+                return False,"权限不足，无权使用此命令", True
             
             if not self.card_map:
                 await self.send_text("没有牌组，无法使用")
-                return False, "没有牌组，无法使用"
+                return False, "没有牌组，无法使用", True
             target_type = self.matched_groups.get("target_type")
             action_value = self.matched_groups.get("action_value")
             support_type = self.get_available_card_type("全部")
@@ -660,7 +660,7 @@ class TarotsCommand(BaseCommand, TarotsAction):
                 check_count=[str(i) for i in range(22,78)]
             else:
                 await self.send_text("这不在可用牌组中") 
-                return False,"非可用牌组"
+                return False, "非可用牌组", True
             
             if target_type == "cache" and not action_value:
                 
@@ -706,26 +706,26 @@ class TarotsCommand(BaseCommand, TarotsAction):
                     result_msg += f"，其中重新下载了 {redownload_count} 张损坏的图片"
                 
                 await self.send_text(result_msg)
-                return True, result_msg
+                return True, result_msg, True
             
             elif target_type == "switch" and action_value:
                 cards = self._check_cards(action_value)
                 if cards:
                     self.set_card(action_value)
                     await self.send_text(f"已更换当前牌组为{action_value}")
-                    return True, f"成功更换使用牌组至{action_value}"
+                    return True, f"成功更换使用牌组至{action_value}", True
                 else:
                     await self.send_text(f"{action_value}并不在当前可用牌组里")
-                    return False, f"{action_value}并不在当前可用牌组里"
+                    return False, f"{action_value}并不在当前可用牌组里", True
 
             else:
                 await self.send_text("没有这种参数，只能填cache或者switch哦")
-                return False, "没有这种参数"
+                return False, "没有这种参数", True
 
         except Exception as e:
             await self.send_text(f"{self.log_prefix} 命令执行错误: {e}")
             logger.error(f"{self.log_prefix} 命令执行错误: {e}")
-            return False, f"执行失败: {str(e)}"
+            return False, f"执行失败: {str(e)}", True
         
     def _check_person_permission(self, user_id: str) -> bool:
         """权限检查逻辑"""
@@ -767,7 +767,7 @@ class TarotsPlugin(BasePlugin):
     # 配置Schema定义
     config_schema = {
         "plugin": {
-            "config_version": ConfigField(type=str, default="1.2.1", description="插件配置文件版本号"),
+            "config_version": ConfigField(type=str, default="1.3.0", description="插件配置文件版本号"),
             "enabled": ConfigField(type=bool, default=True, description="是否启用插件"),
         },
         "components": {
