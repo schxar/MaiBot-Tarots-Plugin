@@ -226,7 +226,7 @@ class TarotsAction(BaseAction):
             self_person = Person(platform="qq", user_id=self_id)
             message_text = ""
 
-            result_status, result_message = await generator_api.rewrite_reply(
+            status, rewrite_result, error_message = await generator_api.rewrite_reply(
                 chat_stream=self.chat_stream,
                 reply_data={ 
                 "raw_reply": result_text,
@@ -258,16 +258,17 @@ class TarotsAction(BaseAction):
                 await self.send_text(result_text)
                 logger.info("原始文本已发送")
 
-            if result_status:
-             # 合并所有消息片段
-                message_text = result_message[0][1]
+            if status and rewrite_result and len(rewrite_result) > 0:
+                # 合并所有消息片段
+                message_text = rewrite_result[0][1] if isinstance(rewrite_result[0], tuple) else str(rewrite_result[0])
     
             # 一次性发送合并的消息
             if message_text:
                 await self.send_custom("text", message_text, typing=False, reply_message=dict(plain_text=f"{self_person.person_name}:{processed_record_text}"))
                 logger.info("合并消息已发送")
             else:
-                return False, "消息生成错误，很可能是generator炸了"
+                error_msg = error_message if error_message else "消息生成错误，很可能是generator炸了"
+                return False, error_msg
 
             # 记录动作信息
             await self.store_action_info(
