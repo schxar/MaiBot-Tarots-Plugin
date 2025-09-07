@@ -9,13 +9,12 @@
   },
   "license": "AGPL-v3.0",
   "host_application": {
-    "min_version": "0.10.0",
-    "max_version": "0.10.1"
+    "min_version": "0.10.2",
+    "max_version": "0.10.2"
   },
   "keywords": ["tarot", "divination","moderation","bilibili"],
   "categories": ["Moderation", "Entertainment-oriented divination"],
   "repository_url": "https://github.com/A0000Xz/MaiBot-Tarots-Plugin",
   "default_locale": "zh-CN",
   "locales_path": "_locales"
-
 }

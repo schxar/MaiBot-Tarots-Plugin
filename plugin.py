@@ -1,6 +1,6 @@
 from src.plugin_system.base.base_plugin import BasePlugin
 from src.plugin_system.apis.plugin_register_api import register_plugin
-from src.plugin_system.base.base_action import BaseAction, ActionActivationType, ChatMode
+from src.plugin_system.base.base_action import BaseAction, ActionActivationType
 from src.plugin_system.base.base_command import BaseCommand
 from src.plugin_system.base.component_types import ComponentInfo
 from src.plugin_system.base.config_types import ConfigField
@@ -36,7 +36,7 @@ class TarotsAction(BaseAction):
     keyword_case_sensitive = False
 
      # 模式和并行控制
-    mode_enable = ChatMode.ALL
+     
     parallel_action = False
 
     action_description = "执行塔罗牌占卜，支持多种抽牌方式" # action描述
@@ -226,7 +226,7 @@ class TarotsAction(BaseAction):
             self_person = Person(platform="qq", user_id=self_id)
             message_text = ""
 
-            status, rewrite_result, error_message = await generator_api.rewrite_reply(
+            status, llm_response = await generator_api.rewrite_reply(
                 chat_stream=self.chat_stream,
                 reply_data={ 
                 "raw_reply": result_text,
@@ -235,10 +235,10 @@ class TarotsAction(BaseAction):
                 enable_splitter=False,
                 enable_chinese_typo=False
             ) # 让你的麦麦用自己的语言风格阐释结果
-      
+
             # 从 action_data 获取消息内容
             processed_record_text = self.action_data.get("target_message", "") if self.action_data else ""
-            
+
             # 处理回复格式
             reply_match = re.search(r"回复<([^:<>]+):([^:<>]+)>", processed_record_text)
             if reply_match:
@@ -246,29 +246,30 @@ class TarotsAction(BaseAction):
                 person = Person(person_id=person_id)
                 person_name = person.person_name if person.is_known else reply_match.group(1)
                 processed_record_text = re.sub(r"回复<[^:<>]+:[^:<>]+>", f"回复 {person_name}", processed_record_text, count=1)
-                
+
                 # 处理@格式
                 for match in re.finditer(r"@<([^:<>]+):([^:<>]+)>", processed_record_text):
                     person_id = get_person_id("qq", match.group(2))
                     person = Person(person_id=person_id)
                     person_name = person.person_name if person.is_known else match.group(1)
                     processed_record_text = processed_record_text.replace(match.group(0), f"@{person_name}")
-   
+
             if original_text:
                 await self.send_text(result_text)
                 logger.info("原始文本已发送")
 
-            if status and rewrite_result and len(rewrite_result) > 0:
+            message_text = ""
+            if status and llm_response and llm_response.reply_set and len(llm_response.reply_set) > 0:
                 # 合并所有消息片段
-                message_text = rewrite_result[0][1] if isinstance(rewrite_result[0], tuple) else str(rewrite_result[0])
-    
+                message_text = llm_response.reply_set[0][1] if isinstance(llm_response.reply_set[0], tuple) else str(llm_response.reply_set[0])
+
             # 一次性发送合并的消息
             if message_text:
                 await self.send_custom("text", message_text, typing=False, reply_message=dict(plain_text=f"{self_person.person_name}:{processed_record_text}"))
                 logger.info("合并消息已发送")
             else:
-                error_msg = error_message if error_message else "消息生成错误，很可能是generator炸了"
-                return False, error_msg
+                await self.send_text("消息生成错误，很可能是generator炸了")
+                return False, "消息生成错误，很可能是generator炸了"
 
             # 记录动作信息
             await self.store_action_info(
