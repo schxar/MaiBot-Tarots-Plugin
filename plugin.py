@@ -197,7 +197,7 @@ class TarotsAction(BaseAction):
                 img_data = await self._get_card_image(card_id, is_reverse)
                 if img_data:
                     b64_data = base64.b64encode(img_data).decode('utf-8')
-                    await send_api.custom_to_stream("image", b64_data, self.chat_stream.stream_id, typing=False, reply_message={"plain_text": reply_to})
+                    await self.send_image(b64_data)
                 else:
                     # 记录失败的图片
                     failed_images.append(f"{card_data['name']}({'逆位' if is_reverse else '正位'})")
@@ -265,7 +265,7 @@ class TarotsAction(BaseAction):
 
             # 一次性发送合并的消息
             if message_text:
-                await self.send_custom("text", message_text, typing=False, reply_message=dict(plain_text=f"{self_person.person_name}:{processed_record_text}"))
+                await self.send_text(message_text)
                 logger.info("合并消息已发送")
             else:
                 await self.send_text("消息生成错误，很可能是generator炸了")
